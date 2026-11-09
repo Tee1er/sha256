@@ -14,15 +14,19 @@ import sha256_pkg::*;
 typedef enum logic [1:0] {IDLE, ROUNDS, FINAL} state_t;
 state_t state;
 
-// calculate T1 and T2 (these are based off the PREVIOUS rounds vals)
-logic [31:0] T1, T2;
-
-assign T1 = h + Sigma1(e) + ch(e, f, g) + K[t] + W[t]; // mod 2^32 is the default behavior so we r chilling
-assign T2 = Sigma0(a) + maj(a, b, c); // mod 2^32 is the default behavior so we r chilling
+logic [31:0] a, b, c, d, e, f, g, h;   // working variables
+logic [31:0] H[8]; // the current hash state
+logic [7:0] t; // time step counter
 
 // sliding window
 logic [31:0] w [16];
 logic [31:0] w_next;
+
+logic [31:0] T1, T2;
+
+// mod 2^32 is the default behavior so we r chilling
+assign T1 = h + Sigma1(e) + ch(e, f, g) + K[t[5:0]] + w[0]; // w[0] is the next word
+assign T2 = Sigma0(a) + maj(a, b, c);
 
 assign w_next = sigma1(w[14]) + w[9] + sigma0(w[1]) + w[0];
 
@@ -30,7 +34,7 @@ assign busy   = (state != IDLE);
 assign digest = {H[0], H[1], H[2], H[3], H[4], H[5], H[6], H[7]};
 
 always @(posedge clk) begin
-    done <= 8'b0;
+    done <= 1'b0;
 
     if (rst) begin
         state <= IDLE; // set state to idle if reset held
@@ -79,15 +83,7 @@ always @(posedge clk) begin
 
             ROUNDS: begin
                 for (int i = 0; i < 15; i++) w[i] <= w[i+1];   // shift down everything to make room for new w
-                    w[15] <= w_next; // newest word enters at the top
-
-                // the first 16 words in msg sched are taken from the input block
-                if (t <= 15) begin
-                    w[t] <= block[(15-t)*32 +: 32];
-                end
-                else begin
-                    w[t] <= sigma1(w[t-2]) + w[t-7] + sigma0(w[t-15]) + w[t-16];
-                end
+                w[15] <= w_next; // newest word enters at the top
 
                 h <= g;
                 g <= f;
@@ -118,13 +114,14 @@ always @(posedge clk) begin
                 H[6] <= H[6] + g;
                 H[7] <= H[7] + h;
 
-                done <= 8'b1;
+                done <= 1'b1;
                 state <= IDLE;
             end
 
-
+            default: state <= IDLE;
 
         endcase
+
     end
 end
 
